@@ -15,6 +15,7 @@ A simple web application that allows users to unlock protected PDF documents, en
 
 - PHP 7.2 or higher
 - Web server (Apache, Nginx, etc.)
+- Composer (recommended for better PDF unlocking)
 - Optional but recommended: QPDF or Ghostscript for better PDF unlocking
 
 ## Installation
@@ -23,15 +24,31 @@ A simple web application that allows users to unlock protected PDF documents, en
 2. Make sure the following directories are writable by the web server:
    - `uploads/`
    - `processed/`
+   - `logs/`
 3. If they don't exist, create them with proper permissions:
    ```
-   mkdir uploads processed
-   chmod 755 uploads processed
+   mkdir uploads processed logs
+   chmod 755 uploads processed logs
    ```
-4. For better PDF unlocking capabilities, install QPDF or Ghostscript:
+4. For better PDF unlocking capabilities, install dependencies using Composer:
+   ```
+   composer install
+   ```
+5. If you don't have Composer, you can install it from [getcomposer.org](https://getcomposer.org/)
+6. For even better PDF unlocking capabilities, install QPDF or Ghostscript:
    - On Debian/Ubuntu: `sudo apt-get install qpdf ghostscript`
    - On CentOS/RHEL: `sudo yum install qpdf ghostscript`
    - On Windows: Download and install from their official websites
+
+## Troubleshooting
+
+If you encounter issues with PDF unlocking:
+
+1. Check the logs in the `logs/` directory for error messages
+2. Make sure all directories have proper write permissions
+3. Try installing QPDF or Ghostscript for better PDF unlocking
+4. If using Composer, make sure all dependencies are installed correctly
+5. Some heavily protected PDFs may not be unlockable with this tool
 
 ## Usage
 

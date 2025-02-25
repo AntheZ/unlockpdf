@@ -11,6 +11,29 @@ define('FILE_EXPIRY_TIME', 60 * 10);
 define('UPLOAD_DIR', __DIR__ . '/../uploads/');
 // Set processed directory
 define('PROCESSED_DIR', __DIR__ . '/../processed/');
+// Set log directory
+define('LOG_DIR', __DIR__ . '/../logs/');
+
+// Include PDF unlock methods
+require_once __DIR__ . '/pdf_unlock.php';
+
+/**
+ * Log message to file
+ * 
+ * @param string $message Message to log
+ * @return void
+ */
+function logMessage($message) {
+    if (!file_exists(LOG_DIR)) {
+        mkdir(LOG_DIR, 0755, true);
+    }
+    
+    $logFile = LOG_DIR . 'app.log';
+    $timestamp = date('Y-m-d H:i:s');
+    $logMessage = "[$timestamp] $message" . PHP_EOL;
+    
+    file_put_contents($logFile, $logMessage, FILE_APPEND);
+}
 
 /**
  * Get or create a unique user ID
@@ -39,19 +62,35 @@ function createUserDirectories($userId) {
     $userProcessedDir = PROCESSED_DIR . $userId . '/';
     
     if (!file_exists(UPLOAD_DIR)) {
-        mkdir(UPLOAD_DIR, 0755, true);
+        $result = mkdir(UPLOAD_DIR, 0755, true);
+        if (!$result) {
+            logMessage("Failed to create upload directory: " . UPLOAD_DIR);
+            return false;
+        }
     }
     
     if (!file_exists(PROCESSED_DIR)) {
-        mkdir(PROCESSED_DIR, 0755, true);
+        $result = mkdir(PROCESSED_DIR, 0755, true);
+        if (!$result) {
+            logMessage("Failed to create processed directory: " . PROCESSED_DIR);
+            return false;
+        }
     }
     
     if (!file_exists($userUploadDir)) {
-        mkdir($userUploadDir, 0755, true);
+        $result = mkdir($userUploadDir, 0755, true);
+        if (!$result) {
+            logMessage("Failed to create user upload directory: " . $userUploadDir);
+            return false;
+        }
     }
     
     if (!file_exists($userProcessedDir)) {
-        mkdir($userProcessedDir, 0755, true);
+        $result = mkdir($userProcessedDir, 0755, true);
+        if (!$result) {
+            logMessage("Failed to create user processed directory: " . $userProcessedDir);
+            return false;
+        }
     }
     
     return (is_dir($userUploadDir) && is_dir($userProcessedDir));
@@ -83,21 +122,50 @@ function getFileExtension($filename) {
  * @return bool Is valid PDF
  */
 function isValidPdf($filePath) {
+    // Log file information
+    logMessage("Validating PDF file: " . $filePath);
+    
+    // Check if file exists
+    if (!file_exists($filePath)) {
+        logMessage("File does not exist: " . $filePath);
+        return false;
+    }
+    
+    // Check file size
+    $fileSize = filesize($filePath);
+    if ($fileSize === 0) {
+        logMessage("File is empty: " . $filePath);
+        return false;
+    }
+    
+    logMessage("File size: " . $fileSize . " bytes");
+    
     // Check file extension
-    if (getFileExtension($filePath) !== 'pdf') {
+    $extension = getFileExtension($filePath);
+    if ($extension !== 'pdf') {
+        logMessage("Invalid file extension: " . $extension);
         return false;
     }
     
     // Check file signature (PDF magic number)
     $handle = fopen($filePath, 'rb');
     if (!$handle) {
+        logMessage("Failed to open file: " . $filePath);
         return false;
     }
     
     $header = fread($handle, 4);
     fclose($handle);
     
-    return $header === '%PDF';
+    $isPdf = (substr($header, 0, 4) === '%PDF');
+    
+    if (!$isPdf) {
+        logMessage("Invalid PDF header: " . bin2hex($header));
+    } else {
+        logMessage("Valid PDF header detected");
+    }
+    
+    return $isPdf;
 }
 
 /**
@@ -108,10 +176,15 @@ function isValidPdf($filePath) {
  * @return bool Success status
  */
 function downloadFile($url, $savePath) {
+    logMessage("Downloading file from URL: " . $url);
+    
     $options = [
         'http' => [
             'method' => 'GET',
-            'header' => "User-Agent: PDF Unlock Tool\r\n"
+            'header' => "User-Agent: PDF Unlock Tool\r\n",
+            'timeout' => 30,
+            'follow_location' => 1,
+            'max_redirects' => 5
         ]
     ];
     
@@ -119,10 +192,19 @@ function downloadFile($url, $savePath) {
     $content = @file_get_contents($url, false, $context);
     
     if ($content === false) {
+        logMessage("Failed to download file from URL: " . $url . " - Error: " . error_get_last()['message']);
         return false;
     }
     
-    return file_put_contents($savePath, $content) !== false;
+    $result = file_put_contents($savePath, $content);
+    
+    if ($result === false) {
+        logMessage("Failed to save downloaded file to: " . $savePath);
+        return false;
+    }
+    
+    logMessage("File downloaded successfully. Size: " . strlen($content) . " bytes");
+    return true;
 }
 
 /**
@@ -133,40 +215,65 @@ function downloadFile($url, $savePath) {
  * @return bool Success status
  */
 function unlockPdf($inputPath, $outputPath) {
-    // Check if QPDF is installed
+    logMessage("Attempting to unlock PDF: " . $inputPath);
+    
+    // Verify input file exists
+    if (!file_exists($inputPath)) {
+        logMessage("Input file does not exist: " . $inputPath);
+        return false;
+    }
+    
+    // Try multiple methods to unlock the PDF
+    
+    // Method 1: Try pdftk (if available)
+    exec('pdftk --version 2>&1', $output, $returnVar);
+    $pdftk_installed = ($returnVar === 0);
+    
+    if ($pdftk_installed) {
+        logMessage("pdftk is installed, trying it first");
+        if (unlockPdfWithPdftk($inputPath, $outputPath)) {
+            return true;
+        }
+    }
+    
+    // Method 2: Try QPDF (if available)
     exec('qpdf --version 2>&1', $output, $returnVar);
     $qpdfInstalled = ($returnVar === 0);
     
     if ($qpdfInstalled) {
-        // Use QPDF to unlock the PDF
-        $command = sprintf(
-            'qpdf --decrypt "%s" "%s" 2>&1',
-            escapeshellarg($inputPath),
-            escapeshellarg($outputPath)
-        );
-        
-        exec($command, $output, $returnVar);
-        return ($returnVar === 0);
-    } else {
-        // Fallback to Ghostscript if QPDF is not available
-        exec('gs --version 2>&1', $output, $returnVar);
-        $gsInstalled = ($returnVar === 0);
-        
-        if ($gsInstalled) {
-            $command = sprintf(
-                'gs -q -dNOPAUSE -dBATCH -sDEVICE=pdfwrite -sOutputFile="%s" -c .setpdfwrite -f "%s" 2>&1',
-                escapeshellarg($outputPath),
-                escapeshellarg($inputPath)
-            );
-            
-            exec($command, $output, $returnVar);
-            return ($returnVar === 0);
-        } else {
-            // If neither QPDF nor Ghostscript is available, use PHP fallback
-            // This is a very basic fallback and may not work for all PDFs
-            return copy($inputPath, $outputPath);
+        logMessage("QPDF is installed, trying it next");
+        if (unlockPdfWithQpdf($inputPath, $outputPath)) {
+            return true;
         }
     }
+    
+    // Method 3: Try Enhanced Ghostscript (if available)
+    exec('gs --version 2>&1', $output, $returnVar);
+    $gsInstalled = ($returnVar === 0);
+    
+    if ($gsInstalled) {
+        logMessage("Ghostscript is installed, trying enhanced parameters");
+        if (unlockPdfWithEnhancedGhostscript($inputPath, $outputPath)) {
+            return true;
+        }
+        
+        logMessage("Enhanced Ghostscript failed, trying standard parameters");
+        if (unlockPdfWithGhostscript($inputPath, $outputPath)) {
+            return true;
+        }
+    }
+    
+    // Method 4: Try FPDI (if available)
+    if (function_exists('unlockPdfWithFpdi')) {
+        logMessage("Trying FPDI method");
+        if (unlockPdfWithFpdi($inputPath, $outputPath)) {
+            return true;
+        }
+    }
+    
+    // Method 5: Last resort - simple copy
+    logMessage("All methods failed, using simple copy as last resort");
+    return simplePdfCopy($inputPath, $outputPath);
 }
 
 /**
