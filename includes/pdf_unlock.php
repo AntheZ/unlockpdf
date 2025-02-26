@@ -1,27 +1,15 @@
 <?php
 /**
- * PDF Unlock Tool - Alternative PDF unlocking method using FPDI
+ * PDF Unlock Tool - Alternative PDF unlocking method using FPDI with TCPDF
  * 
  * This file provides an alternative method for unlocking PDFs using the FPDI library.
  * It requires the FPDI and TCPDF libraries to be installed via Composer.
  */
 
-// Check if FPDI is available
-if (!class_exists('\\setasign\\Fpdi\\Fpdi')) {
+// Check if TCPDF and FPDI are available
+if (!class_exists('\\setasign\\Fpdi\\Tcpdf\\Fpdi') && class_exists('\\TCPDF') && class_exists('\\setasign\\Fpdi\\Fpdi')) {
     /**
-     * Fallback PDF unlocking method using pure PHP
-     * 
-     * @param string $inputPath Path to input file
-     * @param string $outputPath Path to output file
-     * @return bool Success status
-     */
-    function unlockPdfWithFpdi($inputPath, $outputPath) {
-        logMessage("FPDI not available. Please install FPDI via Composer.");
-        return false;
-    }
-} else {
-    /**
-     * Unlock PDF using FPDI
+     * Unlock PDF using FPDI with TCPDF adapter
      * 
      * @param string $inputPath Path to input file
      * @param string $outputPath Path to output file
@@ -29,10 +17,10 @@ if (!class_exists('\\setasign\\Fpdi\\Fpdi')) {
      */
     function unlockPdfWithFpdi($inputPath, $outputPath) {
         try {
-            logMessage("Attempting to unlock PDF with FPDI: " . $inputPath);
+            logMessage("Attempting to unlock PDF with FPDI+TCPDF: " . $inputPath);
             
-            // Create new PDF document
-            $pdf = new \setasign\Fpdi\Fpdi();
+            // Create new PDF document using TCPDF adapter
+            $pdf = new \setasign\Fpdi\Tcpdf\Fpdi();
             
             // Get the number of pages
             $pageCount = $pdf->setSourceFile($inputPath);
@@ -59,12 +47,24 @@ if (!class_exists('\\setasign\\Fpdi\\Fpdi')) {
             // Save the new PDF
             $pdf->Output($outputPath, 'F');
             
-            logMessage("PDF successfully unlocked with FPDI");
+            logMessage("PDF successfully unlocked with FPDI+TCPDF");
             return true;
         } catch (\Exception $e) {
-            logMessage("FPDI error: " . $e->getMessage());
+            logMessage("FPDI+TCPDF error: " . $e->getMessage());
             return false;
         }
+    }
+} else {
+    /**
+     * Fallback PDF unlocking method
+     * 
+     * @param string $inputPath Path to input file
+     * @param string $outputPath Path to output file
+     * @return bool Success status
+     */
+    function unlockPdfWithFpdi($inputPath, $outputPath) {
+        logMessage("FPDI with TCPDF not available. Skipping this method.");
+        return false;
     }
 }
 
@@ -107,6 +107,7 @@ function unlockPdfWithQpdf($inputPath, $outputPath) {
 function unlockPdfWithGhostscript($inputPath, $outputPath) {
     logMessage("Attempting to unlock PDF with Ghostscript: " . $inputPath);
     
+    // Use 'gs' command for Linux
     $command = sprintf(
         'gs -q -dNOPAUSE -dBATCH -sDEVICE=pdfwrite -sOutputFile="%s" -c .setpdfwrite -f "%s" 2>&1',
         escapeshellarg($outputPath),
@@ -129,33 +130,37 @@ function unlockPdfWithGhostscript($inputPath, $outputPath) {
 /**
  * Unlock PDF using Ghostscript with enhanced parameters
  * 
- * @param string $inputPath Path to input file
- * @param string $outputPath Path to output file
- * @return bool Success status
+ * @param string $inputFile Path to the input PDF file
+ * @param string $outputFile Path to the output PDF file
+ * @return bool True if successful, false otherwise
  */
-function unlockPdfWithEnhancedGhostscript($inputPath, $outputPath) {
-    logMessage("Attempting to unlock PDF with Enhanced Ghostscript: " . $inputPath);
+function unlockPdfWithEnhancedGhostscript($inputFile, $outputFile) {
+    // Construct the Ghostscript command with enhanced parameters
+    $command = 'gs -q -dNOPAUSE -dBATCH -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 '
+             . '-dPDFSETTINGS=/default -dCompressFonts=true -dDetectDuplicateImages=true '
+             . '-dAutoRotatePages=/None -dPrinted=false -dCannotEmbedFontPolicy=/Warning '
+             . '-c "<</AllowPrint true /AllowCopy true /AllowChange true /AllowAnnots true '
+             . '/AllowFillIn true /AllowScreenReaders true /AllowAssembly true '
+             . '/AllowDegradedPrinting true /OwnerPassword () /UserPassword () '
+             . '/EncryptMetadata false>> setpdfparams" '
+             . '-f "' . $inputFile . '" -sOutputFile="' . $outputFile . '"';
+
+    // Log the command being executed
+    logMessage("Executing enhanced Ghostscript command: " . $command);
     
-    // Enhanced parameters to remove all restrictions
-    $command = sprintf(
-        'gs -q -dNOPAUSE -dBATCH -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/default ' .
-        '-dCompressFonts=true -dSubsetFonts=true -dEmbedAllFonts=true ' .
-        '-dPermissions=-44 -sOutputFile="%s" "%s" 2>&1',
-        escapeshellarg($outputPath),
-        escapeshellarg($inputPath)
-    );
+    // Execute the command
+    $output = [];
+    $returnCode = 0;
+    exec($command . " 2>&1", $output, $returnCode);
     
-    logMessage("Executing command: " . $command);
-    exec($command, $output, $returnVar);
-    
-    $success = ($returnVar === 0);
-    if (!$success) {
-        logMessage("Enhanced Ghostscript failed with return code: " . $returnVar . ", Output: " . implode("\n", $output));
+    // Check if the command was successful
+    if ($returnCode === 0 && file_exists($outputFile)) {
+        logMessage("Successfully unlocked PDF with enhanced Ghostscript parameters");
+        return true;
     } else {
-        logMessage("Enhanced Ghostscript successfully unlocked the PDF");
+        logMessage("Failed to unlock PDF with enhanced Ghostscript parameters. Return code: " . $returnCode . ", Output: " . implode("\n", $output));
+        return false;
     }
-    
-    return $success;
 }
 
 /**
@@ -206,4 +211,66 @@ function simplePdfCopy($inputPath, $outputPath) {
     }
     
     return $success;
+}
+
+/**
+ * Unlock PDF using TCPDF and FPDI
+ * 
+ * @param string $inputFile Path to the input PDF file
+ * @param string $outputFile Path to the output PDF file
+ * @return bool True if successful, false otherwise
+ */
+function unlockPdfWithTCPDF($inputFile, $outputFile) {
+    try {
+        // Check if TCPDF and FPDI-TCPDF are available
+        if (!class_exists('\\setasign\\Fpdi\\Tcpdf\\Fpdi')) {
+            logMessage("FPDI-TCPDF class not found. Make sure you have installed setasign/fpdi-tcpdf");
+            return false;
+        }
+        
+        // Create new FPDI-TCPDF instance
+        $pdf = new \setasign\Fpdi\Tcpdf\Fpdi();
+        
+        // Set document information
+        $pdf->SetCreator('PDF Unlock Tool');
+        $pdf->SetAuthor('PDF Unlock Tool');
+        $pdf->SetTitle('Unlocked PDF');
+        
+        // Remove protection
+        $pdf->SetProtection(array(), '', null, 0, null);
+        
+        // Get the number of pages from the original PDF
+        $pageCount = $pdf->setSourceFile($inputFile);
+        
+        // Import all pages from the original PDF
+        for ($i = 1; $i <= $pageCount; $i++) {
+            $template = $pdf->importPage($i);
+            $size = $pdf->getTemplateSize($template);
+            
+            // Add a page with the same orientation as the imported page
+            if ($size['width'] > $size['height']) {
+                $pdf->AddPage('L', array($size['width'], $size['height']));
+            } else {
+                $pdf->AddPage('P', array($size['width'], $size['height']));
+            }
+            
+            // Use the imported page
+            $pdf->useTemplate($template);
+        }
+        
+        // Save the new PDF to the output file
+        $pdf->Output($outputFile, 'F');
+        
+        // Check if the output file exists
+        if (file_exists($outputFile)) {
+            logMessage("Successfully unlocked PDF with TCPDF and FPDI");
+            return true;
+        } else {
+            logMessage("Failed to create output file with TCPDF and FPDI");
+            return false;
+        }
+    } catch (Exception $e) {
+        logMessage("Error unlocking PDF with TCPDF and FPDI: " . $e->getMessage());
+        return false;
+    }
 } 

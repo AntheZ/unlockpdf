@@ -1,15 +1,24 @@
 {
-    "name": "unlockpdf/tool",
-    "description": "A simple web application that allows users to unlock protected PDF documents",
+    "name": "unlockpdf/pdf-unlock-tool",
+    "description": "Інструмент для розблокування захищених PDF-файлів з обмеженнями на друк, копіювання та редагування",
     "type": "project",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "PDF Unlock Tool",
+            "email": "info@example.com"
+        }
+    ],
     "require": {
-        "php": ">=7.2",
-        "setasign/fpdi": "^2.3",
-        "tecnickcom/tcpdf": "^6.4"
+        "php": ">=7.2.0",
+        "tecnickcom/tcpdf": "^6.4",
+        "setasign/fpdi-tcpdf": "^2.3",
+        "setasign/fpdi": "^2.3"
     },
     "autoload": {
-        "psr-4": {
-            "UnlockPdf\\": "src/"
-        }
+        "files": [
+            "includes/functions.php",
+            "includes/pdf_unlock.php"
+        ]
     }
 } 

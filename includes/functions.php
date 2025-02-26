@@ -208,72 +208,82 @@ function downloadFile($url, $savePath) {
 }
 
 /**
- * Unlock PDF file
+ * Unlock a PDF file
  * 
- * @param string $inputPath Path to input file
- * @param string $outputPath Path to output file
- * @return bool Success status
+ * @param string $inputFile Path to the input PDF file
+ * @param string $outputFile Path to the output PDF file
+ * @return bool True if successful, false otherwise
  */
-function unlockPdf($inputPath, $outputPath) {
-    logMessage("Attempting to unlock PDF: " . $inputPath);
+function unlockPdf($inputFile, $outputFile) {
+    logMessage("Starting PDF unlock process for file: " . $inputFile);
     
-    // Verify input file exists
-    if (!file_exists($inputPath)) {
-        logMessage("Input file does not exist: " . $inputPath);
-        return false;
+    // Method 1: Try to unlock using Ghostscript with enhanced parameters (best method)
+    logMessage("Method 1: Attempting to unlock with Ghostscript (enhanced parameters)");
+    if (unlockPdfWithEnhancedGhostscript($inputFile, $outputFile)) {
+        logMessage("Successfully unlocked PDF with Ghostscript (enhanced parameters)");
+        return true;
     }
     
-    // Try multiple methods to unlock the PDF
-    
-    // Method 1: Try pdftk (if available)
-    exec('pdftk --version 2>&1', $output, $returnVar);
-    $pdftk_installed = ($returnVar === 0);
-    
-    if ($pdftk_installed) {
-        logMessage("pdftk is installed, trying it first");
-        if (unlockPdfWithPdftk($inputPath, $outputPath)) {
-            return true;
-        }
+    // Method 2: Try to unlock using TCPDF and FPDI
+    logMessage("Method 2: Attempting to unlock with TCPDF and FPDI");
+    if (unlockPdfWithTCPDF($inputFile, $outputFile)) {
+        logMessage("Successfully unlocked PDF with TCPDF and FPDI");
+        return true;
     }
     
-    // Method 2: Try QPDF (if available)
-    exec('qpdf --version 2>&1', $output, $returnVar);
-    $qpdfInstalled = ($returnVar === 0);
-    
-    if ($qpdfInstalled) {
-        logMessage("QPDF is installed, trying it next");
-        if (unlockPdfWithQpdf($inputPath, $outputPath)) {
-            return true;
-        }
+    // Method 3: Try to unlock using standard Ghostscript
+    logMessage("Method 3: Attempting to unlock with standard Ghostscript");
+    if (unlockPdfWithGhostscript($inputFile, $outputFile)) {
+        logMessage("Successfully unlocked PDF with standard Ghostscript");
+        return true;
     }
     
-    // Method 3: Try Enhanced Ghostscript (if available)
-    exec('gs --version 2>&1', $output, $returnVar);
-    $gsInstalled = ($returnVar === 0);
-    
-    if ($gsInstalled) {
-        logMessage("Ghostscript is installed, trying enhanced parameters");
-        if (unlockPdfWithEnhancedGhostscript($inputPath, $outputPath)) {
+    // Method 4: Check if pdftk is available and try to use it
+    logMessage("Method 4: Checking for pdftk");
+    if (isPdftkInstalled()) {
+        logMessage("pdftk is installed, attempting to unlock with pdftk");
+        if (unlockPdfWithPdftk($inputFile, $outputFile)) {
+            logMessage("Successfully unlocked PDF with pdftk");
             return true;
         }
-        
-        logMessage("Enhanced Ghostscript failed, trying standard parameters");
-        if (unlockPdfWithGhostscript($inputPath, $outputPath)) {
-            return true;
-        }
+    } else {
+        logMessage("pdftk is not installed, skipping this method");
     }
     
-    // Method 4: Try FPDI (if available)
-    if (function_exists('unlockPdfWithFpdi')) {
-        logMessage("Trying FPDI method");
-        if (unlockPdfWithFpdi($inputPath, $outputPath)) {
+    // Method 5: Check if QPDF is available and try to use it
+    logMessage("Method 5: Checking for QPDF");
+    if (isQpdfInstalled()) {
+        logMessage("QPDF is installed, attempting to unlock with QPDF");
+        if (unlockPdfWithQpdf($inputFile, $outputFile)) {
+            logMessage("Successfully unlocked PDF with QPDF");
             return true;
         }
+    } else {
+        logMessage("QPDF is not installed, skipping this method");
     }
     
-    // Method 5: Last resort - simple copy
-    logMessage("All methods failed, using simple copy as last resort");
-    return simplePdfCopy($inputPath, $outputPath);
+    // Method 6: Try to unlock using FPDI (if available)
+    logMessage("Method 6: Checking for FPDI");
+    if (class_exists('\\setasign\\Fpdi\\Fpdi')) {
+        logMessage("FPDI is available, attempting to unlock with FPDI");
+        if (unlockPdfWithFpdi($inputFile, $outputFile)) {
+            logMessage("Successfully unlocked PDF with FPDI");
+            return true;
+        }
+    } else {
+        logMessage("FPDI is not available, skipping this method");
+    }
+    
+    // Method 7: Last resort - just copy the file
+    logMessage("Method 7: All methods failed, attempting simple copy as last resort");
+    if (copy($inputFile, $outputFile)) {
+        logMessage("Successfully copied PDF file (simple copy method)");
+        return true;
+    }
+    
+    // If all methods fail
+    logMessage("All unlocking methods failed for file: " . $inputFile);
+    return false;
 }
 
 /**

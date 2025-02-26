@@ -1,15 +1,15 @@
 <?php
 /**
- * Script to check for external tools used for PDF unlocking
+ * Скрипт для перевірки зовнішніх інструментів, які використовуються для розблокування PDF
  */
 
-// Function to output messages
+// Функція для виведення повідомлень
 function output($message) {
     echo $message . PHP_EOL;
     flush();
 }
 
-// Function to check if a command is available
+// Функція для перевірки наявності команди
 function commandExists($command) {
     $whereCommand = (PHP_OS == 'WINNT') ? 'where' : 'which';
     $cmd = sprintf('%s %s 2>&1', $whereCommand, escapeshellarg($command));
@@ -17,140 +17,140 @@ function commandExists($command) {
     return $return_var === 0;
 }
 
-// Function to check Ghostscript version
+// Функція для перевірки версії Ghostscript
 function checkGhostscript() {
-    $command = 'gswin64c --version 2>&1';
-    exec($command, $output, $return_var);
-    
-    if ($return_var === 0 && !empty($output)) {
-        return trim($output[0]);
-    }
-    
-    // Try alternative command
-    $command = 'gswin32c --version 2>&1';
-    exec($command, $output, $return_var);
-    
-    if ($return_var === 0 && !empty($output)) {
-        return trim($output[0]);
-    }
-    
-    // Try Linux/Mac command
+    // Спочатку спробуємо команду для Linux/Mac
     $command = 'gs --version 2>&1';
-    exec($command, $output, $return_var);
+    exec($command, $output, $returnVar);
     
-    if ($return_var === 0 && !empty($output)) {
+    if ($returnVar === 0 && !empty($output)) {
+        return trim($output[0]);
+    }
+    
+    // Спробуємо команди для Windows як запасний варіант
+    $command = 'gswin64c --version 2>&1';
+    exec($command, $output, $returnVar);
+    
+    if ($returnVar === 0 && !empty($output)) {
+        return trim($output[0]);
+    }
+    
+    $command = 'gswin32c --version 2>&1';
+    exec($command, $output, $returnVar);
+    
+    if ($returnVar === 0 && !empty($output)) {
         return trim($output[0]);
     }
     
     return false;
 }
 
-// Function to check QPDF version
+// Функція для перевірки версії QPDF
 function checkQPDF() {
     $command = 'qpdf --version 2>&1';
     exec($command, $output, $return_var);
     
     if ($return_var === 0 && !empty($output)) {
-        // Extract version from output
+        // Витягуємо версію з виводу
         foreach ($output as $line) {
             if (strpos($line, 'qpdf version') !== false) {
                 return trim(str_replace('qpdf version', '', $line));
             }
         }
-        return 'installed (version unknown)';
+        return 'встановлено (версія невідома)';
     }
     
     return false;
 }
 
-// Function to check pdftk version
+// Функція для перевірки версії pdftk
 function checkPdftk() {
     $command = 'pdftk --version 2>&1';
     exec($command, $output, $return_var);
     
     if ($return_var === 0 && !empty($output)) {
-        // Extract version from output
+        // Витягуємо версію з виводу
         foreach ($output as $line) {
             if (strpos($line, 'pdftk') !== false && strpos($line, 'version') !== false) {
                 return trim($line);
             }
         }
-        return 'installed (version unknown)';
+        return 'встановлено (версія невідома)';
     }
     
     return false;
 }
 
-// Check PHP extensions
-output('Checking PHP extensions...');
+// Перевірка PHP-розширень
+output('Перевірка PHP-розширень...');
 $required_extensions = ['json', 'fileinfo', 'zip', 'openssl', 'mbstring'];
 $missing_extensions = [];
 
 foreach ($required_extensions as $ext) {
     if (extension_loaded($ext)) {
-        output("✓ {$ext} extension is installed");
+        output("✓ Розширення {$ext} встановлено");
     } else {
-        output("✗ {$ext} extension is missing");
+        output("✗ Розширення {$ext} відсутнє");
         $missing_extensions[] = $ext;
     }
 }
 
 if (!empty($missing_extensions)) {
     output('');
-    output('Warning: Some required PHP extensions are missing.');
-    output('You may encounter issues with the PDF Unlock Tool.');
+    output('Увага: Деякі необхідні PHP-розширення відсутні.');
+    output('Можуть виникнути проблеми з роботою PDF Unlock Tool.');
 }
 
-// Check external tools
+// Перевірка зовнішніх інструментів
 output('');
-output('Checking external tools...');
+output('Перевірка зовнішніх інструментів...');
 
-// Check Ghostscript
+// Перевірка Ghostscript
 $gs_version = checkGhostscript();
 if ($gs_version !== false) {
-    output("✓ Ghostscript is installed (version {$gs_version})");
+    output("✓ Ghostscript встановлено (версія {$gs_version})");
 } else {
-    output("✗ Ghostscript is not installed or not in PATH");
-    output("  Download: https://www.ghostscript.com/releases/gsdnld.html");
+    output("✗ Ghostscript не встановлено або відсутній у PATH");
+    output("  Завантажити: https://www.ghostscript.com/releases/gsdnld.html");
 }
 
-// Check QPDF
+// Перевірка QPDF
 $qpdf_version = checkQPDF();
 if ($qpdf_version !== false) {
-    output("✓ QPDF is installed (version {$qpdf_version})");
+    output("✓ QPDF встановлено (версія {$qpdf_version})");
 } else {
-    output("✗ QPDF is not installed or not in PATH");
-    output("  Download: https://github.com/qpdf/qpdf/releases");
+    output("✗ QPDF не встановлено або відсутній у PATH");
+    output("  Завантажити: https://github.com/qpdf/qpdf/releases");
 }
 
-// Check pdftk
+// Перевірка pdftk
 $pdftk_version = checkPdftk();
 if ($pdftk_version !== false) {
-    output("✓ pdftk is installed ({$pdftk_version})");
+    output("✓ pdftk встановлено ({$pdftk_version})");
 } else {
-    output("✗ pdftk is not installed or not in PATH");
-    output("  Download: https://www.pdflabs.com/tools/pdftk-the-pdf-toolkit/");
+    output("✗ pdftk не встановлено або відсутній у PATH");
+    output("  Завантажити: https://www.pdflabs.com/tools/pdftk-the-pdf-toolkit/");
 }
 
-// Check FPDI (PHP library)
+// Перевірка FPDI (PHP-бібліотека)
 output('');
-output('Checking PHP libraries...');
+output('Перевірка PHP-бібліотек...');
 if (file_exists(__DIR__ . '/vendor/autoload.php')) {
     require_once __DIR__ . '/vendor/autoload.php';
     if (class_exists('\\setasign\\Fpdi\\Fpdi')) {
-        output("✓ FPDI library is installed");
+        output("✓ Бібліотека FPDI встановлена");
     } else {
-        output("✗ FPDI library is not installed");
-        output("  Run: php install_dependencies.php");
+        output("✗ Бібліотека FPDI не встановлена");
+        output("  Виконайте: php composer require setasign/fpdi-tcpdf");
     }
 } else {
-    output("✗ Composer dependencies are not installed");
-    output("  Run: php install_dependencies.php");
+    output("✗ Залежності Composer не встановлені");
+    output("  Виконайте: php composer update");
 }
 
-// Summary
+// Підсумок
 output('');
-output('Summary:');
+output('Підсумок:');
 $tools_installed = 0;
 $tools_total = 3; // Ghostscript, QPDF, pdftk
 
@@ -158,19 +158,19 @@ if ($gs_version !== false) $tools_installed++;
 if ($qpdf_version !== false) $tools_installed++;
 if ($pdftk_version !== false) $tools_installed++;
 
-output("{$tools_installed} of {$tools_total} external tools are installed.");
+output("Встановлено {$tools_installed} з {$tools_total} зовнішніх інструментів.");
 
 if ($tools_installed === 0) {
     output('');
-    output('Warning: No external tools are installed!');
-    output('The PDF Unlock Tool will use fallback methods, which may not work for all PDFs.');
-    output('It is highly recommended to install at least one of the external tools.');
+    output('Увага: Жоден зовнішній інструмент не встановлено!');
+    output('PDF Unlock Tool використовуватиме запасні методи, які можуть працювати не для всіх PDF-файлів.');
+    output('Наполегливо рекомендується встановити хоча б один із зовнішніх інструментів.');
 } elseif ($tools_installed < $tools_total) {
     output('');
-    output('Recommendation: Install all external tools for best results.');
-    output('Different tools work better for different types of PDF protection.');
+    output('Рекомендація: Встановіть усі зовнішні інструменти для найкращих результатів.');
+    output('Різні інструменти краще працюють для різних типів захисту PDF.');
 }
 
 output('');
-output('For installation instructions, see INSTALL.md');
+output('Для інструкцій з встановлення див. INSTALL.md');
 output(''); 
