@@ -308,21 +308,36 @@ function unlockPdf($inputFile, $outputFile) {
     logMessage("Method 1: Attempting to unlock with Ghostscript (enhanced parameters)");
     if (unlockPdfWithEnhancedGhostscript($inputFile, $outputFile)) {
         logMessage("Successfully unlocked PDF with Ghostscript (enhanced parameters)");
-        return true;
+        if (validateOutputPdf($outputFile)) {
+            logMessage("Output file validation successful");
+            return true;
+        } else {
+            logMessage("Output file validation failed for Ghostscript (enhanced parameters) method");
+        }
     }
     
     // Method 2: Try to unlock using standard Ghostscript
     logMessage("Method 2: Attempting to unlock with standard Ghostscript");
     if (unlockPdfWithGhostscript($inputFile, $outputFile)) {
         logMessage("Successfully unlocked PDF with standard Ghostscript");
-        return true;
+        if (validateOutputPdf($outputFile)) {
+            logMessage("Output file validation successful");
+            return true;
+        } else {
+            logMessage("Output file validation failed for standard Ghostscript method");
+        }
     }
     
     // Method 3: Try to unlock using QPDF
     logMessage("Method 3: Attempting to unlock with QPDF");
     if (unlockPdfWithQpdf($inputFile, $outputFile)) {
         logMessage("Successfully unlocked PDF with QPDF");
-        return true;
+        if (validateOutputPdf($outputFile)) {
+            logMessage("Output file validation successful");
+            return true;
+        } else {
+            logMessage("Output file validation failed for QPDF method");
+        }
     }
     
     // Method 4: Check if pdftk is available and try to use it
@@ -331,7 +346,12 @@ function unlockPdf($inputFile, $outputFile) {
         logMessage("pdftk is installed, attempting to unlock with pdftk");
         if (unlockPdfWithPdftk($inputFile, $outputFile)) {
             logMessage("Successfully unlocked PDF with pdftk");
-            return true;
+            if (validateOutputPdf($outputFile)) {
+                logMessage("Output file validation successful");
+                return true;
+            } else {
+                logMessage("Output file validation failed for pdftk method");
+            }
         }
     } else {
         logMessage("pdftk is not installed, skipping this method");
@@ -341,28 +361,48 @@ function unlockPdf($inputFile, $outputFile) {
     logMessage("Method 5: Attempting to unlock with PHP (custom implementation)");
     if (unlockPdfWithPhp($inputFile, $outputFile)) {
         logMessage("Successfully unlocked PDF with PHP (custom implementation)");
-        return true;
+        if (validateOutputPdf($outputFile)) {
+            logMessage("Output file validation successful");
+            return true;
+        } else {
+            logMessage("Output file validation failed for PHP method");
+        }
     }
     
     // Method 6: Try to unlock using metadata modification
     logMessage("Method 6: Attempting to unlock with metadata modification");
     if (unlockPdfWithMetadataModification($inputFile, $outputFile)) {
         logMessage("Successfully unlocked PDF with metadata modification");
-        return true;
+        if (validateOutputPdf($outputFile)) {
+            logMessage("Output file validation successful");
+            return true;
+        } else {
+            logMessage("Output file validation failed for metadata modification method");
+        }
     }
     
     // Method 7: Try to unlock using restriction removal
     logMessage("Method 7: Attempting to unlock with restriction removal");
     if (unlockPdfWithRestrictionRemoval($inputFile, $outputFile)) {
         logMessage("Successfully unlocked PDF with restriction removal");
-        return true;
+        if (validateOutputPdf($outputFile)) {
+            logMessage("Output file validation successful");
+            return true;
+        } else {
+            logMessage("Output file validation failed for restriction removal method");
+        }
     }
     
     // Method 8: Last resort - just copy the file
     logMessage("Method 8: All methods failed, attempting simple copy as last resort");
     if (copy($inputFile, $outputFile)) {
         logMessage("Successfully copied PDF file (simple copy method)");
-        return true;
+        if (validateOutputPdf($outputFile)) {
+            logMessage("Output file validation successful");
+            return true;
+        } else {
+            logMessage("Output file validation failed for simple copy method");
+        }
     }
     
     // If all methods fail
@@ -473,7 +513,7 @@ function getUserFiles($userId) {
             $files[] = [
                 'id' => $fileId,
                 'name' => $originalName,
-                'download_url' => 'download.php?id=' . $fileId,
+                'download_url' => 'download.php?file=' . urlencode($fileInfo->getFilename()) . '&user=' . urlencode($userId),
                 'expiry' => $expiry
             ];
         }
@@ -511,6 +551,51 @@ function getOriginalFileName($fileId, $userId) {
 function saveFileMetadata($fileId, $userId, $metadata) {
     $metadataFile = PROCESSED_DIR . $userId . '/' . $fileId . '.meta';
     return file_put_contents($metadataFile, json_encode($metadata)) !== false;
+}
+
+/**
+ * Validate the output PDF file
+ * 
+ * @param string $filePath Path to the PDF file
+ * @return bool Is valid PDF
+ */
+function validateOutputPdf($filePath) {
+    logMessage("Validating output PDF file: " . $filePath);
+    
+    // Check if file exists
+    if (!file_exists($filePath)) {
+        logMessage("Output file does not exist: " . $filePath);
+        return false;
+    }
+    
+    // Check file size
+    $fileSize = filesize($filePath);
+    if ($fileSize === 0) {
+        logMessage("Output file is empty: " . $filePath);
+        return false;
+    }
+    
+    logMessage("Output file size: " . $fileSize . " bytes");
+    
+    // Check file signature (PDF magic number)
+    $handle = fopen($filePath, 'rb');
+    if (!$handle) {
+        logMessage("Failed to open output file: " . $filePath);
+        return false;
+    }
+    
+    $header = fread($handle, 4);
+    fclose($handle);
+    
+    $isPdf = (substr($header, 0, 4) === '%PDF');
+    
+    if (!$isPdf) {
+        logMessage("Invalid PDF header in output file: " . bin2hex($header));
+    } else {
+        logMessage("Valid PDF header detected in output file");
+    }
+    
+    return $isPdf;
 }
 
 // Run cleanup on every request
