@@ -1,52 +1,58 @@
 <?php
 /**
- * Download unlocked PDF file
+ * PDF Unlock Tool - Файл для завантаження розблокованих PDF-файлів
+ * 
+ * Цей файл забезпечує безпечне завантаження розблокованих PDF-файлів
  */
 
-// Start session
-session_start();
-
-// Include helper functions
+// Підключення необхідних файлів
 require_once 'includes/functions.php';
 
-// Get user ID
-$userId = getUserId();
-
-// Check if file ID is provided
-if (!isset($_GET['id']) || empty($_GET['id'])) {
+// Перевірка наявності параметра file
+if (!isset($_GET['file']) || empty($_GET['file'])) {
     header('HTTP/1.1 400 Bad Request');
-    echo 'File ID is required';
+    echo 'Помилка: Не вказано файл для завантаження.';
     exit;
 }
 
-$fileId = $_GET['id'];
+// Отримання імені файлу
+$filename = basename($_GET['file']);
 
-// Validate file ID (prevent directory traversal)
-if (!preg_match('/^[a-f0-9]+$/', $fileId)) {
-    header('HTTP/1.1 400 Bad Request');
-    echo 'Invalid file ID';
+// Перевірка на спроби обходу директорії
+if (strpos($filename, '..') !== false || strpos($filename, '/') !== false || strpos($filename, '\\') !== false) {
+    header('HTTP/1.1 403 Forbidden');
+    echo 'Помилка: Недопустиме ім\'я файлу.';
     exit;
 }
 
-// Check if file exists
-$filePath = PROCESSED_DIR . $userId . '/' . $fileId . '.pdf';
+// Шлях до файлу
+$filePath = __DIR__ . '/processed/' . $filename;
+
+// Перевірка існування файлу
 if (!file_exists($filePath)) {
     header('HTTP/1.1 404 Not Found');
-    echo 'File not found';
+    echo 'Помилка: Файл не знайдено.';
     exit;
 }
 
-// Get original file name
-$originalName = getOriginalFileName($fileId, $userId);
+// Перевірка, чи є файл PDF-документом
+if (!isPdfFile($filePath)) {
+    header('HTTP/1.1 400 Bad Request');
+    echo 'Помилка: Файл не є PDF-документом.';
+    exit;
+}
 
-// Set headers for download
+// Логування завантаження
+logMessage("Завантаження розблокованого файлу: " . $filename);
+
+// Встановлення заголовків для завантаження
 header('Content-Type: application/pdf');
-header('Content-Disposition: attachment; filename="' . $originalName . '"');
+header('Content-Disposition: attachment; filename="' . $filename . '"');
 header('Content-Length: ' . filesize($filePath));
-header('Cache-Control: no-cache, must-revalidate');
+header('Cache-Control: no-cache, no-store, must-revalidate');
 header('Pragma: no-cache');
 header('Expires: 0');
 
-// Output file
+// Відправка файлу
 readfile($filePath);
 exit; 

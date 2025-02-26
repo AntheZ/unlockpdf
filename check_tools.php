@@ -1,176 +1,249 @@
 <?php
 /**
- * Скрипт для перевірки зовнішніх інструментів, які використовуються для розблокування PDF
+ * PDF Unlock Tool - Перевірка наявності необхідних інструментів
+ * 
+ * Цей файл перевіряє наявність інструментів, необхідних для розблокування PDF-файлів
  */
 
+// Підключення необхідних файлів
+require_once 'includes/functions.php';
+
+// Перевірка, чи запущено з командного рядка
+$isCli = php_sapi_name() === 'cli';
+
 // Функція для виведення повідомлень
-function output($message) {
-    echo $message . PHP_EOL;
-    flush();
-}
-
-// Функція для перевірки наявності команди
-function commandExists($command) {
-    $whereCommand = (PHP_OS == 'WINNT') ? 'where' : 'which';
-    $cmd = sprintf('%s %s 2>&1', $whereCommand, escapeshellarg($command));
-    exec($cmd, $output, $return_var);
-    return $return_var === 0;
-}
-
-// Функція для перевірки версії Ghostscript
-function checkGhostscript() {
-    // Спочатку спробуємо команду для Linux/Mac
-    $command = 'gs --version 2>&1';
-    exec($command, $output, $returnVar);
+function printMessage($message, $type = 'info') {
+    global $isCli;
     
-    if ($returnVar === 0 && !empty($output)) {
-        return trim($output[0]);
-    }
-    
-    // Спробуємо команди для Windows як запасний варіант
-    $command = 'gswin64c --version 2>&1';
-    exec($command, $output, $returnVar);
-    
-    if ($returnVar === 0 && !empty($output)) {
-        return trim($output[0]);
-    }
-    
-    $command = 'gswin32c --version 2>&1';
-    exec($command, $output, $returnVar);
-    
-    if ($returnVar === 0 && !empty($output)) {
-        return trim($output[0]);
-    }
-    
-    return false;
-}
-
-// Функція для перевірки версії QPDF
-function checkQPDF() {
-    $command = 'qpdf --version 2>&1';
-    exec($command, $output, $return_var);
-    
-    if ($return_var === 0 && !empty($output)) {
-        // Витягуємо версію з виводу
-        foreach ($output as $line) {
-            if (strpos($line, 'qpdf version') !== false) {
-                return trim(str_replace('qpdf version', '', $line));
-            }
+    if ($isCli) {
+        $prefix = '';
+        switch ($type) {
+            case 'success':
+                $prefix = "\033[32m[✓]\033[0m ";
+                break;
+            case 'error':
+                $prefix = "\033[31m[✗]\033[0m ";
+                break;
+            case 'warning':
+                $prefix = "\033[33m[!]\033[0m ";
+                break;
+            default:
+                $prefix = "\033[34m[i]\033[0m ";
         }
-        return 'встановлено (версія невідома)';
-    }
-    
-    return false;
-}
-
-// Функція для перевірки версії pdftk
-function checkPdftk() {
-    $command = 'pdftk --version 2>&1';
-    exec($command, $output, $return_var);
-    
-    if ($return_var === 0 && !empty($output)) {
-        // Витягуємо версію з виводу
-        foreach ($output as $line) {
-            if (strpos($line, 'pdftk') !== false && strpos($line, 'version') !== false) {
-                return trim($line);
-            }
+        echo $prefix . $message . PHP_EOL;
+    } else {
+        $class = '';
+        switch ($type) {
+            case 'success':
+                $class = 'success';
+                break;
+            case 'error':
+                $class = 'error';
+                break;
+            case 'warning':
+                $class = 'warning';
+                break;
+            default:
+                $class = 'info';
         }
-        return 'встановлено (версія невідома)';
+        echo '<div class="message ' . $class . '">' . $message . '</div>';
+    }
+}
+
+// Перевірка версії PHP
+$phpVersion = phpversion();
+$requiredPhpVersion = '7.2.0';
+$phpVersionCheck = version_compare($phpVersion, $requiredPhpVersion, '>=');
+
+// Перевірка наявності необхідних розширень PHP
+$requiredExtensions = ['gd', 'mbstring', 'fileinfo'];
+$missingExtensions = [];
+
+foreach ($requiredExtensions as $extension) {
+    if (!extension_loaded($extension)) {
+        $missingExtensions[] = $extension;
+    }
+}
+
+// Перевірка наявності інструментів
+$tools = [
+    'ghostscript' => isGhostscriptInstalled(),
+    'qpdf' => isQpdfInstalled(),
+    'pdftk' => isPdftkInstalled()
+];
+
+// Перевірка прав доступу до директорій
+$directories = [
+    'uploads' => __DIR__ . '/uploads',
+    'processed' => __DIR__ . '/processed',
+    'logs' => __DIR__ . '/logs'
+];
+
+$directoryIssues = [];
+
+foreach ($directories as $name => $path) {
+    if (!is_dir($path)) {
+        $directoryIssues[$name] = 'не існує';
+    } elseif (!is_writable($path)) {
+        $directoryIssues[$name] = 'немає прав на запис';
+    }
+}
+
+// Виведення результатів
+if (!$isCli) {
+    echo '<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Unlock Tool - Перевірка інструментів</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .message {
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+        }
+        .message.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .message.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .message.warning {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+        }
+        .message.info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .section {
+            margin-bottom: 20px;
+        }
+        .section h2 {
+            color: #2c3e50;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+        .back-link {
+            display: inline-block;
+            margin-top: 20px;
+            color: #3498db;
+            text-decoration: none;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>PDF Unlock Tool - Перевірка інструментів</h1>';
+}
+
+// Виведення заголовка для CLI
+if ($isCli) {
+    echo "=== PDF Unlock Tool - Перевірка інструментів ===" . PHP_EOL . PHP_EOL;
+}
+
+// Виведення інформації про PHP
+if (!$isCli) echo '<div class="section"><h2>PHP</h2>';
+
+if ($phpVersionCheck) {
+    printMessage("PHP версія: $phpVersion (відповідає вимогам)", 'success');
+} else {
+    printMessage("PHP версія: $phpVersion (потрібно $requiredPhpVersion або вище)", 'error');
+}
+
+if (empty($missingExtensions)) {
+    printMessage("Усі необхідні розширення PHP встановлені", 'success');
+} else {
+    printMessage("Відсутні розширення PHP: " . implode(', ', $missingExtensions), 'error');
+}
+
+if (!$isCli) echo '</div>';
+
+// Виведення інформації про інструменти
+if (!$isCli) echo '<div class="section"><h2>Інструменти</h2>';
+
+$hasTools = false;
+foreach ($tools as $tool => $installed) {
+    if ($installed) {
+        $hasTools = true;
+        printMessage("$tool: встановлено", 'success');
+    } else {
+        printMessage("$tool: не встановлено", 'warning');
+    }
+}
+
+if (!$hasTools) {
+    printMessage("Жоден з інструментів не встановлено. PDF Unlock Tool буде використовувати власні методи розблокування.", 'warning');
+} else {
+    printMessage("PDF Unlock Tool буде використовувати доступні інструменти для розблокування PDF-файлів.", 'info');
+}
+
+if (!$isCli) echo '</div>';
+
+// Виведення інформації про директорії
+if (!$isCli) echo '<div class="section"><h2>Директорії</h2>';
+
+if (empty($directoryIssues)) {
+    printMessage("Усі необхідні директорії існують і мають правильні права доступу", 'success');
+} else {
+    foreach ($directoryIssues as $name => $issue) {
+        printMessage("Директорія '$name': $issue", 'error');
     }
     
-    return false;
+    printMessage("Виконайте наступну команду для створення директорій:", 'info');
+    $command = "mkdir -p " . implode(' ', array_values($directories));
+    printMessage($command, 'info');
+    
+    printMessage("Виконайте наступну команду для встановлення прав доступу:", 'info');
+    $command = "chmod 755 " . implode(' ', array_values($directories));
+    printMessage($command, 'info');
 }
 
-// Перевірка PHP-розширень
-output('Перевірка PHP-розширень...');
-$required_extensions = ['json', 'fileinfo', 'zip', 'openssl', 'mbstring'];
-$missing_extensions = [];
+if (!$isCli) echo '</div>';
 
-foreach ($required_extensions as $ext) {
-    if (extension_loaded($ext)) {
-        output("✓ Розширення {$ext} встановлено");
-    } else {
-        output("✗ Розширення {$ext} відсутнє");
-        $missing_extensions[] = $ext;
-    }
-}
+// Виведення загального результату
+if (!$isCli) echo '<div class="section"><h2>Загальний результат</h2>';
 
-if (!empty($missing_extensions)) {
-    output('');
-    output('Увага: Деякі необхідні PHP-розширення відсутні.');
-    output('Можуть виникнути проблеми з роботою PDF Unlock Tool.');
-}
+$hasErrors = !$phpVersionCheck || !empty($missingExtensions) || !empty($directoryIssues);
 
-// Перевірка зовнішніх інструментів
-output('');
-output('Перевірка зовнішніх інструментів...');
-
-// Перевірка Ghostscript
-$gs_version = checkGhostscript();
-if ($gs_version !== false) {
-    output("✓ Ghostscript встановлено (версія {$gs_version})");
+if ($hasErrors) {
+    printMessage("Виявлено проблеми, які потрібно вирішити перед використанням PDF Unlock Tool", 'error');
 } else {
-    output("✗ Ghostscript не встановлено або відсутній у PATH");
-    output("  Завантажити: https://www.ghostscript.com/releases/gsdnld.html");
+    printMessage("PDF Unlock Tool готовий до використання", 'success');
 }
 
-// Перевірка QPDF
-$qpdf_version = checkQPDF();
-if ($qpdf_version !== false) {
-    output("✓ QPDF встановлено (версія {$qpdf_version})");
-} else {
-    output("✗ QPDF не встановлено або відсутній у PATH");
-    output("  Завантажити: https://github.com/qpdf/qpdf/releases");
-}
-
-// Перевірка pdftk
-$pdftk_version = checkPdftk();
-if ($pdftk_version !== false) {
-    output("✓ pdftk встановлено ({$pdftk_version})");
-} else {
-    output("✗ pdftk не встановлено або відсутній у PATH");
-    output("  Завантажити: https://www.pdflabs.com/tools/pdftk-the-pdf-toolkit/");
-}
-
-// Перевірка FPDI (PHP-бібліотека)
-output('');
-output('Перевірка PHP-бібліотек...');
-if (file_exists(__DIR__ . '/vendor/autoload.php')) {
-    require_once __DIR__ . '/vendor/autoload.php';
-    if (class_exists('\\setasign\\Fpdi\\Fpdi')) {
-        output("✓ Бібліотека FPDI встановлена");
-    } else {
-        output("✗ Бібліотека FPDI не встановлена");
-        output("  Виконайте: php composer require setasign/fpdi-tcpdf");
-    }
-} else {
-    output("✗ Залежності Composer не встановлені");
-    output("  Виконайте: php composer update");
-}
-
-// Підсумок
-output('');
-output('Підсумок:');
-$tools_installed = 0;
-$tools_total = 3; // Ghostscript, QPDF, pdftk
-
-if ($gs_version !== false) $tools_installed++;
-if ($qpdf_version !== false) $tools_installed++;
-if ($pdftk_version !== false) $tools_installed++;
-
-output("Встановлено {$tools_installed} з {$tools_total} зовнішніх інструментів.");
-
-if ($tools_installed === 0) {
-    output('');
-    output('Увага: Жоден зовнішній інструмент не встановлено!');
-    output('PDF Unlock Tool використовуватиме запасні методи, які можуть працювати не для всіх PDF-файлів.');
-    output('Наполегливо рекомендується встановити хоча б один із зовнішніх інструментів.');
-} elseif ($tools_installed < $tools_total) {
-    output('');
-    output('Рекомендація: Встановіть усі зовнішні інструменти для найкращих результатів.');
-    output('Різні інструменти краще працюють для різних типів захисту PDF.');
-}
-
-output('');
-output('Для інструкцій з встановлення див. INSTALL.md');
-output(''); 
+if (!$isCli) {
+    echo '<a href="index.php" class="back-link">Повернутися на головну сторінку</a>';
+    echo '</div></div></body></html>';
+} 

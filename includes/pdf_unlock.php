@@ -1,276 +1,413 @@
 <?php
 /**
- * PDF Unlock Tool - Alternative PDF unlocking method using FPDI with TCPDF
+ * PDF Unlock Tool - Власна бібліотека для розблокування PDF-файлів
  * 
- * This file provides an alternative method for unlocking PDFs using the FPDI library.
- * It requires the FPDI and TCPDF libraries to be installed via Composer.
+ * Цей файл містить функції для розблокування PDF-файлів різними методами
+ * без залежності від сторонніх бібліотек.
  */
-
-// Check if TCPDF and FPDI are available
-if (!class_exists('\\setasign\\Fpdi\\Tcpdf\\Fpdi') && class_exists('\\TCPDF') && class_exists('\\setasign\\Fpdi\\Fpdi')) {
-    /**
-     * Unlock PDF using FPDI with TCPDF adapter
-     * 
-     * @param string $inputPath Path to input file
-     * @param string $outputPath Path to output file
-     * @return bool Success status
-     */
-    function unlockPdfWithFpdi($inputPath, $outputPath) {
-        try {
-            logMessage("Attempting to unlock PDF with FPDI+TCPDF: " . $inputPath);
-            
-            // Create new PDF document using TCPDF adapter
-            $pdf = new \setasign\Fpdi\Tcpdf\Fpdi();
-            
-            // Get the number of pages
-            $pageCount = $pdf->setSourceFile($inputPath);
-            logMessage("PDF has " . $pageCount . " pages");
-            
-            // Process each page
-            for ($pageNo = 1; $pageNo <= $pageCount; $pageNo++) {
-                // Import page
-                $templateId = $pdf->importPage($pageNo);
-                
-                // Get the size of the imported page
-                $size = $pdf->getTemplateSize($templateId);
-                
-                // Add a page with the same size
-                $pdf->AddPage(
-                    $size['width'] > $size['height'] ? 'L' : 'P', 
-                    [$size['width'], $size['height']]
-                );
-                
-                // Use the imported page
-                $pdf->useTemplate($templateId);
-            }
-            
-            // Save the new PDF
-            $pdf->Output($outputPath, 'F');
-            
-            logMessage("PDF successfully unlocked with FPDI+TCPDF");
-            return true;
-        } catch (\Exception $e) {
-            logMessage("FPDI+TCPDF error: " . $e->getMessage());
-            return false;
-        }
-    }
-} else {
-    /**
-     * Fallback PDF unlocking method
-     * 
-     * @param string $inputPath Path to input file
-     * @param string $outputPath Path to output file
-     * @return bool Success status
-     */
-    function unlockPdfWithFpdi($inputPath, $outputPath) {
-        logMessage("FPDI with TCPDF not available. Skipping this method.");
-        return false;
-    }
-}
 
 /**
- * Unlock PDF using qpdf command line tool
+ * Перевірка наявності Ghostscript
  * 
- * @param string $inputPath Path to input file
- * @param string $outputPath Path to output file
- * @return bool Success status
+ * @return bool Чи встановлено Ghostscript
  */
-function unlockPdfWithQpdf($inputPath, $outputPath) {
-    logMessage("Attempting to unlock PDF with qpdf: " . $inputPath);
-    
-    $command = sprintf(
-        'qpdf --decrypt "%s" "%s" 2>&1',
-        escapeshellarg($inputPath),
-        escapeshellarg($outputPath)
-    );
-    
-    logMessage("Executing command: " . $command);
+function isGhostscriptInstalled() {
+    // Перевірка для Linux/Mac
+    $command = 'gs --version 2>&1';
     exec($command, $output, $returnVar);
     
-    $success = ($returnVar === 0);
-    if (!$success) {
-        logMessage("qpdf failed with return code: " . $returnVar . ", Output: " . implode("\n", $output));
-    } else {
-        logMessage("qpdf successfully unlocked the PDF");
+    if ($returnVar === 0) {
+        return true;
     }
     
-    return $success;
-}
-
-/**
- * Unlock PDF using Ghostscript
- * 
- * @param string $inputPath Path to input file
- * @param string $outputPath Path to output file
- * @return bool Success status
- */
-function unlockPdfWithGhostscript($inputPath, $outputPath) {
-    logMessage("Attempting to unlock PDF with Ghostscript: " . $inputPath);
-    
-    // Use 'gs' command for Linux
-    $command = sprintf(
-        'gs -q -dNOPAUSE -dBATCH -sDEVICE=pdfwrite -sOutputFile="%s" -c .setpdfwrite -f "%s" 2>&1',
-        escapeshellarg($outputPath),
-        escapeshellarg($inputPath)
-    );
-    
-    logMessage("Executing command: " . $command);
+    // Перевірка для Windows
+    $command = 'gswin64c --version 2>&1';
     exec($command, $output, $returnVar);
     
-    $success = ($returnVar === 0);
-    if (!$success) {
-        logMessage("Ghostscript failed with return code: " . $returnVar . ", Output: " . implode("\n", $output));
-    } else {
-        logMessage("Ghostscript successfully unlocked the PDF");
+    if ($returnVar === 0) {
+        return true;
     }
     
-    return $success;
+    $command = 'gswin32c --version 2>&1';
+    exec($command, $output, $returnVar);
+    
+    return ($returnVar === 0);
 }
 
 /**
- * Unlock PDF using Ghostscript with enhanced parameters
+ * Перевірка наявності QPDF
  * 
- * @param string $inputFile Path to the input PDF file
- * @param string $outputFile Path to the output PDF file
- * @return bool True if successful, false otherwise
+ * @return bool Чи встановлено QPDF
+ */
+function isQpdfInstalled() {
+    $command = 'qpdf --version 2>&1';
+    exec($command, $output, $returnVar);
+    
+    return ($returnVar === 0);
+}
+
+/**
+ * Перевірка наявності pdftk
+ * 
+ * @return bool Чи встановлено pdftk
+ */
+function isPdftkInstalled() {
+    $command = 'pdftk --version 2>&1';
+    exec($command, $output, $returnVar);
+    
+    return ($returnVar === 0);
+}
+
+/**
+ * Розблокування PDF за допомогою Ghostscript з розширеними параметрами
+ * 
+ * @param string $inputFile Шлях до вхідного PDF-файлу
+ * @param string $outputFile Шлях до вихідного PDF-файлу
+ * @return bool Успішність операції
  */
 function unlockPdfWithEnhancedGhostscript($inputFile, $outputFile) {
-    // Construct the Ghostscript command with enhanced parameters
-    $command = 'gs -q -dNOPAUSE -dBATCH -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 '
-             . '-dPDFSETTINGS=/default -dCompressFonts=true -dDetectDuplicateImages=true '
-             . '-dAutoRotatePages=/None -dPrinted=false -dCannotEmbedFontPolicy=/Warning '
-             . '-c "<</AllowPrint true /AllowCopy true /AllowChange true /AllowAnnots true '
-             . '/AllowFillIn true /AllowScreenReaders true /AllowAssembly true '
-             . '/AllowDegradedPrinting true /OwnerPassword () /UserPassword () '
-             . '/EncryptMetadata false>> setpdfparams" '
-             . '-f "' . $inputFile . '" -sOutputFile="' . $outputFile . '"';
-
-    // Log the command being executed
-    logMessage("Executing enhanced Ghostscript command: " . $command);
+    // Перевірка наявності Ghostscript
+    if (!isGhostscriptInstalled()) {
+        logMessage("Ghostscript не встановлено");
+        return false;
+    }
     
-    // Execute the command
+    // Визначення команди Ghostscript
+    $gsCommand = (PHP_OS == 'WINNT') ? 'gswin64c' : 'gs';
+    if (PHP_OS == 'WINNT' && !commandExists('gswin64c')) {
+        $gsCommand = 'gswin32c';
+    }
+    
+    // Конструювання команди Ghostscript з розширеними параметрами
+    $command = sprintf(
+        '%s -q -dNOPAUSE -dBATCH -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 ' .
+        '-dPDFSETTINGS=/default -dCompressFonts=true -dDetectDuplicateImages=true ' .
+        '-dAutoRotatePages=/None -dPrinted=false -dCannotEmbedFontPolicy=/Warning ' .
+        '-c "<</AllowPrint true /AllowCopy true /AllowChange true /AllowAnnots true ' .
+        '/AllowFillIn true /AllowScreenReaders true /AllowAssembly true ' .
+        '/AllowDegradedPrinting true /OwnerPassword () /UserPassword () ' .
+        '/EncryptMetadata false>> setpdfparams" ' .
+        '-f "%s" -sOutputFile="%s"',
+        $gsCommand,
+        escapeshellarg($inputFile),
+        escapeshellarg($outputFile)
+    );
+    
+    // Логування команди
+    logMessage("Виконання команди Ghostscript з розширеними параметрами: " . $command);
+    
+    // Виконання команди
     $output = [];
     $returnCode = 0;
     exec($command . " 2>&1", $output, $returnCode);
     
-    // Check if the command was successful
+    // Перевірка успішності виконання
     if ($returnCode === 0 && file_exists($outputFile)) {
-        logMessage("Successfully unlocked PDF with enhanced Ghostscript parameters");
+        logMessage("PDF успішно розблоковано за допомогою Ghostscript з розширеними параметрами");
         return true;
     } else {
-        logMessage("Failed to unlock PDF with enhanced Ghostscript parameters. Return code: " . $returnCode . ", Output: " . implode("\n", $output));
+        logMessage("Не вдалося розблокувати PDF за допомогою Ghostscript з розширеними параметрами. Код повернення: " . $returnCode . ", Вивід: " . implode("\n", $output));
         return false;
     }
 }
 
 /**
- * Unlock PDF using pdftk
+ * Розблокування PDF за допомогою стандартного Ghostscript
  * 
- * @param string $inputPath Path to input file
- * @param string $outputPath Path to output file
- * @return bool Success status
+ * @param string $inputFile Шлях до вхідного PDF-файлу
+ * @param string $outputFile Шлях до вихідного PDF-файлу
+ * @return bool Успішність операції
  */
-function unlockPdfWithPdftk($inputPath, $outputPath) {
-    logMessage("Attempting to unlock PDF with pdftk: " . $inputPath);
+function unlockPdfWithGhostscript($inputFile, $outputFile) {
+    // Перевірка наявності Ghostscript
+    if (!isGhostscriptInstalled()) {
+        logMessage("Ghostscript не встановлено");
+        return false;
+    }
     
+    // Визначення команди Ghostscript
+    $gsCommand = (PHP_OS == 'WINNT') ? 'gswin64c' : 'gs';
+    if (PHP_OS == 'WINNT' && !commandExists('gswin64c')) {
+        $gsCommand = 'gswin32c';
+    }
+    
+    // Конструювання стандартної команди Ghostscript
     $command = sprintf(
-        'pdftk "%s" output "%s" allow all 2>&1',
-        escapeshellarg($inputPath),
-        escapeshellarg($outputPath)
+        '%s -q -dNOPAUSE -dBATCH -sDEVICE=pdfwrite -sOutputFile="%s" -c .setpdfwrite -f "%s" 2>&1',
+        $gsCommand,
+        escapeshellarg($outputFile),
+        escapeshellarg($inputFile)
     );
     
-    logMessage("Executing command: " . $command);
-    exec($command, $output, $returnVar);
+    // Логування команди
+    logMessage("Виконання стандартної команди Ghostscript: " . $command);
     
-    $success = ($returnVar === 0);
-    if (!$success) {
-        logMessage("pdftk failed with return code: " . $returnVar . ", Output: " . implode("\n", $output));
+    // Виконання команди
+    $output = [];
+    $returnCode = 0;
+    exec($command, $output, $returnCode);
+    
+    // Перевірка успішності виконання
+    if ($returnCode === 0 && file_exists($outputFile)) {
+        logMessage("PDF успішно розблоковано за допомогою стандартного Ghostscript");
+        return true;
     } else {
-        logMessage("pdftk successfully unlocked the PDF");
-    }
-    
-    return $success;
-}
-
-/**
- * Simple PDF copy as a last resort
- * 
- * @param string $inputPath Path to input file
- * @param string $outputPath Path to output file
- * @return bool Success status
- */
-function simplePdfCopy($inputPath, $outputPath) {
-    logMessage("Using simple copy as a last resort: " . $inputPath);
-    
-    $success = copy($inputPath, $outputPath);
-    
-    if (!$success) {
-        logMessage("Simple copy failed");
-    } else {
-        logMessage("Simple copy completed");
-    }
-    
-    return $success;
-}
-
-/**
- * Unlock PDF using TCPDF and FPDI
- * 
- * @param string $inputFile Path to the input PDF file
- * @param string $outputFile Path to the output PDF file
- * @return bool True if successful, false otherwise
- */
-function unlockPdfWithTCPDF($inputFile, $outputFile) {
-    try {
-        // Check if TCPDF and FPDI-TCPDF are available
-        if (!class_exists('\\setasign\\Fpdi\\Tcpdf\\Fpdi')) {
-            logMessage("FPDI-TCPDF class not found. Make sure you have installed setasign/fpdi-tcpdf");
-            return false;
-        }
-        
-        // Create new FPDI-TCPDF instance
-        $pdf = new \setasign\Fpdi\Tcpdf\Fpdi();
-        
-        // Set document information
-        $pdf->SetCreator('PDF Unlock Tool');
-        $pdf->SetAuthor('PDF Unlock Tool');
-        $pdf->SetTitle('Unlocked PDF');
-        
-        // Remove protection
-        $pdf->SetProtection(array(), '', null, 0, null);
-        
-        // Get the number of pages from the original PDF
-        $pageCount = $pdf->setSourceFile($inputFile);
-        
-        // Import all pages from the original PDF
-        for ($i = 1; $i <= $pageCount; $i++) {
-            $template = $pdf->importPage($i);
-            $size = $pdf->getTemplateSize($template);
-            
-            // Add a page with the same orientation as the imported page
-            if ($size['width'] > $size['height']) {
-                $pdf->AddPage('L', array($size['width'], $size['height']));
-            } else {
-                $pdf->AddPage('P', array($size['width'], $size['height']));
-            }
-            
-            // Use the imported page
-            $pdf->useTemplate($template);
-        }
-        
-        // Save the new PDF to the output file
-        $pdf->Output($outputFile, 'F');
-        
-        // Check if the output file exists
-        if (file_exists($outputFile)) {
-            logMessage("Successfully unlocked PDF with TCPDF and FPDI");
-            return true;
-        } else {
-            logMessage("Failed to create output file with TCPDF and FPDI");
-            return false;
-        }
-    } catch (Exception $e) {
-        logMessage("Error unlocking PDF with TCPDF and FPDI: " . $e->getMessage());
+        logMessage("Не вдалося розблокувати PDF за допомогою стандартного Ghostscript. Код повернення: " . $returnCode . ", Вивід: " . implode("\n", $output));
         return false;
     }
+}
+
+/**
+ * Розблокування PDF за допомогою QPDF
+ * 
+ * @param string $inputFile Шлях до вхідного PDF-файлу
+ * @param string $outputFile Шлях до вихідного PDF-файлу
+ * @return bool Успішність операції
+ */
+function unlockPdfWithQpdf($inputFile, $outputFile) {
+    // Перевірка наявності QPDF
+    if (!isQpdfInstalled()) {
+        logMessage("QPDF не встановлено");
+        return false;
+    }
+    
+    // Конструювання команди QPDF
+    $command = sprintf(
+        'qpdf --decrypt "%s" "%s" 2>&1',
+        escapeshellarg($inputFile),
+        escapeshellarg($outputFile)
+    );
+    
+    // Логування команди
+    logMessage("Виконання команди QPDF: " . $command);
+    
+    // Виконання команди
+    $output = [];
+    $returnCode = 0;
+    exec($command, $output, $returnCode);
+    
+    // Перевірка успішності виконання
+    if ($returnCode === 0 && file_exists($outputFile)) {
+        logMessage("PDF успішно розблоковано за допомогою QPDF");
+        return true;
+    } else {
+        logMessage("Не вдалося розблокувати PDF за допомогою QPDF. Код повернення: " . $returnCode . ", Вивід: " . implode("\n", $output));
+        return false;
+    }
+}
+
+/**
+ * Розблокування PDF за допомогою pdftk
+ * 
+ * @param string $inputFile Шлях до вхідного PDF-файлу
+ * @param string $outputFile Шлях до вихідного PDF-файлу
+ * @return bool Успішність операції
+ */
+function unlockPdfWithPdftk($inputFile, $outputFile) {
+    // Перевірка наявності pdftk
+    if (!isPdftkInstalled()) {
+        logMessage("pdftk не встановлено");
+        return false;
+    }
+    
+    // Конструювання команди pdftk
+    $command = sprintf(
+        'pdftk "%s" output "%s" allow all 2>&1',
+        escapeshellarg($inputFile),
+        escapeshellarg($outputFile)
+    );
+    
+    // Логування команди
+    logMessage("Виконання команди pdftk: " . $command);
+    
+    // Виконання команди
+    $output = [];
+    $returnCode = 0;
+    exec($command, $output, $returnCode);
+    
+    // Перевірка успішності виконання
+    if ($returnCode === 0 && file_exists($outputFile)) {
+        logMessage("PDF успішно розблоковано за допомогою pdftk");
+        return true;
+    } else {
+        logMessage("Не вдалося розблокувати PDF за допомогою pdftk. Код повернення: " . $returnCode . ", Вивід: " . implode("\n", $output));
+        return false;
+    }
+}
+
+/**
+ * Розблокування PDF за допомогою PHP (власна реалізація)
+ * 
+ * @param string $inputFile Шлях до вхідного PDF-файлу
+ * @param string $outputFile Шлях до вихідного PDF-файлу
+ * @return bool Успішність операції
+ */
+function unlockPdfWithPhp($inputFile, $outputFile) {
+    logMessage("Спроба розблокування PDF за допомогою PHP: " . $inputFile);
+    
+    try {
+        // Читання вмісту PDF-файлу
+        $pdfContent = file_get_contents($inputFile);
+        if ($pdfContent === false) {
+            logMessage("Не вдалося прочитати вхідний PDF-файл");
+            return false;
+        }
+        
+        // Пошук та видалення шифрування
+        $pattern = '/(\/Encrypt\s+\d+\s+\d+\s+R)/i';
+        $pdfContent = preg_replace($pattern, '', $pdfContent);
+        
+        // Пошук та модифікація прав доступу
+        $pattern = '/(\/P\s+)(-?\d+)/i';
+        $pdfContent = preg_replace($pattern, '$1' . '4294967295', $pdfContent);
+        
+        // Запис модифікованого вмісту у вихідний файл
+        $result = file_put_contents($outputFile, $pdfContent);
+        if ($result === false) {
+            logMessage("Не вдалося записати вихідний PDF-файл");
+            return false;
+        }
+        
+        logMessage("PDF успішно розблоковано за допомогою PHP");
+        return true;
+    } catch (Exception $e) {
+        logMessage("Помилка при розблокуванні PDF за допомогою PHP: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Розблокування PDF за допомогою простого копіювання
+ * 
+ * @param string $inputFile Шлях до вхідного PDF-файлу
+ * @param string $outputFile Шлях до вихідного PDF-файлу
+ * @return bool Успішність операції
+ */
+function simplePdfCopy($inputFile, $outputFile) {
+    logMessage("Використання простого копіювання як останній варіант: " . $inputFile);
+    
+    $success = copy($inputFile, $outputFile);
+    
+    if (!$success) {
+        logMessage("Не вдалося скопіювати PDF-файл");
+    } else {
+        logMessage("Копіювання PDF-файлу завершено");
+    }
+    
+    return $success;
+}
+
+/**
+ * Розблокування PDF за допомогою модифікації метаданих
+ * 
+ * @param string $inputFile Шлях до вхідного PDF-файлу
+ * @param string $outputFile Шлях до вихідного PDF-файлу
+ * @return bool Успішність операції
+ */
+function unlockPdfWithMetadataModification($inputFile, $outputFile) {
+    logMessage("Спроба розблокування PDF за допомогою модифікації метаданих: " . $inputFile);
+    
+    try {
+        // Читання вмісту PDF-файлу
+        $pdfContent = file_get_contents($inputFile);
+        if ($pdfContent === false) {
+            logMessage("Не вдалося прочитати вхідний PDF-файл");
+            return false;
+        }
+        
+        // Додавання метаданих для розблокування
+        $metadataString = "\n/Metadata << /Type /Metadata /Subtype /XML /Length 0 >> stream\nendstream\nendobj\n";
+        
+        // Вставка метаданих перед закриваючим тегом
+        $pattern = '/(%%EOF)/i';
+        $pdfContent = preg_replace($pattern, $metadataString . '$1', $pdfContent);
+        
+        // Запис модифікованого вмісту у вихідний файл
+        $result = file_put_contents($outputFile, $pdfContent);
+        if ($result === false) {
+            logMessage("Не вдалося записати вихідний PDF-файл");
+            return false;
+        }
+        
+        logMessage("PDF успішно розблоковано за допомогою модифікації метаданих");
+        return true;
+    } catch (Exception $e) {
+        logMessage("Помилка при розблокуванні PDF за допомогою модифікації метаданих: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Розблокування PDF за допомогою видалення обмежень
+ * 
+ * @param string $inputFile Шлях до вхідного PDF-файлу
+ * @param string $outputFile Шлях до вихідного PDF-файлу
+ * @return bool Успішність операції
+ */
+function unlockPdfWithRestrictionRemoval($inputFile, $outputFile) {
+    logMessage("Спроба розблокування PDF за допомогою видалення обмежень: " . $inputFile);
+    
+    try {
+        // Читання вмісту PDF-файлу
+        $pdfContent = file_get_contents($inputFile);
+        if ($pdfContent === false) {
+            logMessage("Не вдалося прочитати вхідний PDF-файл");
+            return false;
+        }
+        
+        // Видалення обмежень
+        $patterns = [
+            '/(\/Encrypt\s+\d+\s+\d+\s+R)/i',
+            '/(\/EncryptMetadata\s+\w+)/i',
+            '/(\/EncryptionHandler\s+\d+\s+\d+\s+R)/i',
+            '/(\/CF\s+<<[^>]+>>)/i',
+            '/(\/StmF\s+\/\w+)/i',
+            '/(\/StrF\s+\/\w+)/i',
+            '/(\/EFF\s+\/\w+)/i',
+            '/(\/OE\s+<[^>]+>)/i',
+            '/(\/UE\s+<[^>]+>)/i',
+            '/(\/Perms\s+<[^>]+>)/i',
+            '/(\/O\s+<[^>]+>)/i',
+            '/(\/U\s+<[^>]+>)/i',
+            '/(\/P\s+)(-?\d+)/i'
+        ];
+        
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $pdfContent)) {
+                if ($pattern === '/(\/P\s+)(-?\d+)/i') {
+                    // Встановлення всіх прав доступу
+                    $pdfContent = preg_replace($pattern, '$1' . '4294967295', $pdfContent);
+                } else {
+                    // Видалення обмежень
+                    $pdfContent = preg_replace($pattern, '', $pdfContent);
+                }
+            }
+        }
+        
+        // Запис модифікованого вмісту у вихідний файл
+        $result = file_put_contents($outputFile, $pdfContent);
+        if ($result === false) {
+            logMessage("Не вдалося записати вихідний PDF-файл");
+            return false;
+        }
+        
+        logMessage("PDF успішно розблоковано за допомогою видалення обмежень");
+        return true;
+    } catch (Exception $e) {
+        logMessage("Помилка при розблокуванні PDF за допомогою видалення обмежень: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Перевірка наявності команди
+ * 
+ * @param string $command Команда для перевірки
+ * @return bool Чи доступна команда
+ */
+function commandExists($command) {
+    $whereCommand = (PHP_OS == 'WINNT') ? 'where' : 'which';
+    $cmd = sprintf('%s %s 2>&1', $whereCommand, escapeshellarg($command));
+    exec($cmd, $output, $return_var);
+    return $return_var === 0;
 } 

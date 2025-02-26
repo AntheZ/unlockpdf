@@ -106,6 +106,26 @@ function generateFileId() {
 }
 
 /**
+ * Generate a unique filename for uploaded files
+ * 
+ * @param string $directory Directory where the file will be stored
+ * @return string Unique filename
+ */
+function generateUniqueFilename($directory) {
+    $timestamp = time();
+    $random = bin2hex(random_bytes(4));
+    $filename = "pdf_{$timestamp}_{$random}.pdf";
+    
+    // Make sure the filename is unique
+    while (file_exists($directory . '/' . $filename)) {
+        $random = bin2hex(random_bytes(4));
+        $filename = "pdf_{$timestamp}_{$random}.pdf";
+    }
+    
+    return $filename;
+}
+
+/**
  * Get file extension from filename
  * 
  * @param string $filename Filename
@@ -169,6 +189,73 @@ function isValidPdf($filePath) {
 }
 
 /**
+ * Check if file is a PDF document
+ * 
+ * @param string $filePath Path to the file
+ * @return bool Is PDF file
+ */
+function isPdfFile($filePath) {
+    // This is an alias for isValidPdf for backward compatibility
+    return isValidPdf($filePath);
+}
+
+/**
+ * Check if PDF file is protected/encrypted
+ * 
+ * @param string $filePath Path to the PDF file
+ * @return bool Is PDF protected
+ */
+function isPdfProtected($filePath) {
+    logMessage("Checking if PDF is protected: " . $filePath);
+    
+    // Check if file exists and is a valid PDF
+    if (!isPdfFile($filePath)) {
+        logMessage("Not a valid PDF file: " . $filePath);
+        return false;
+    }
+    
+    // Read the first 1024 bytes of the file to check for encryption
+    $handle = fopen($filePath, 'rb');
+    if (!$handle) {
+        logMessage("Failed to open file: " . $filePath);
+        return false;
+    }
+    
+    $content = fread($handle, 1024);
+    fclose($handle);
+    
+    // Check for encryption dictionary
+    $isProtected = (preg_match('/(\/Encrypt\s+\d+\s+\d+\s+R)/i', $content) === 1);
+    
+    if ($isProtected) {
+        logMessage("PDF is protected: " . $filePath);
+    } else {
+        logMessage("PDF is not protected: " . $filePath);
+    }
+    
+    return $isProtected;
+}
+
+/**
+ * Format file size in human-readable format
+ * 
+ * @param int $bytes File size in bytes
+ * @param int $precision Decimal precision
+ * @return string Formatted file size
+ */
+function formatFileSize($bytes, $precision = 2) {
+    $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    
+    $bytes = max($bytes, 0);
+    $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
+    $pow = min($pow, count($units) - 1);
+    
+    $bytes /= pow(1024, $pow);
+    
+    return round($bytes, $precision) . ' ' . $units[$pow];
+}
+
+/**
  * Download file from URL
  * 
  * @param string $url URL to download from
@@ -224,17 +311,17 @@ function unlockPdf($inputFile, $outputFile) {
         return true;
     }
     
-    // Method 2: Try to unlock using TCPDF and FPDI
-    logMessage("Method 2: Attempting to unlock with TCPDF and FPDI");
-    if (unlockPdfWithTCPDF($inputFile, $outputFile)) {
-        logMessage("Successfully unlocked PDF with TCPDF and FPDI");
+    // Method 2: Try to unlock using standard Ghostscript
+    logMessage("Method 2: Attempting to unlock with standard Ghostscript");
+    if (unlockPdfWithGhostscript($inputFile, $outputFile)) {
+        logMessage("Successfully unlocked PDF with standard Ghostscript");
         return true;
     }
     
-    // Method 3: Try to unlock using standard Ghostscript
-    logMessage("Method 3: Attempting to unlock with standard Ghostscript");
-    if (unlockPdfWithGhostscript($inputFile, $outputFile)) {
-        logMessage("Successfully unlocked PDF with standard Ghostscript");
+    // Method 3: Try to unlock using QPDF
+    logMessage("Method 3: Attempting to unlock with QPDF");
+    if (unlockPdfWithQpdf($inputFile, $outputFile)) {
+        logMessage("Successfully unlocked PDF with QPDF");
         return true;
     }
     
@@ -250,32 +337,29 @@ function unlockPdf($inputFile, $outputFile) {
         logMessage("pdftk is not installed, skipping this method");
     }
     
-    // Method 5: Check if QPDF is available and try to use it
-    logMessage("Method 5: Checking for QPDF");
-    if (isQpdfInstalled()) {
-        logMessage("QPDF is installed, attempting to unlock with QPDF");
-        if (unlockPdfWithQpdf($inputFile, $outputFile)) {
-            logMessage("Successfully unlocked PDF with QPDF");
-            return true;
-        }
-    } else {
-        logMessage("QPDF is not installed, skipping this method");
+    // Method 5: Try to unlock using PHP (custom implementation)
+    logMessage("Method 5: Attempting to unlock with PHP (custom implementation)");
+    if (unlockPdfWithPhp($inputFile, $outputFile)) {
+        logMessage("Successfully unlocked PDF with PHP (custom implementation)");
+        return true;
     }
     
-    // Method 6: Try to unlock using FPDI (if available)
-    logMessage("Method 6: Checking for FPDI");
-    if (class_exists('\\setasign\\Fpdi\\Fpdi')) {
-        logMessage("FPDI is available, attempting to unlock with FPDI");
-        if (unlockPdfWithFpdi($inputFile, $outputFile)) {
-            logMessage("Successfully unlocked PDF with FPDI");
-            return true;
-        }
-    } else {
-        logMessage("FPDI is not available, skipping this method");
+    // Method 6: Try to unlock using metadata modification
+    logMessage("Method 6: Attempting to unlock with metadata modification");
+    if (unlockPdfWithMetadataModification($inputFile, $outputFile)) {
+        logMessage("Successfully unlocked PDF with metadata modification");
+        return true;
     }
     
-    // Method 7: Last resort - just copy the file
-    logMessage("Method 7: All methods failed, attempting simple copy as last resort");
+    // Method 7: Try to unlock using restriction removal
+    logMessage("Method 7: Attempting to unlock with restriction removal");
+    if (unlockPdfWithRestrictionRemoval($inputFile, $outputFile)) {
+        logMessage("Successfully unlocked PDF with restriction removal");
+        return true;
+    }
+    
+    // Method 8: Last resort - just copy the file
+    logMessage("Method 8: All methods failed, attempting simple copy as last resort");
     if (copy($inputFile, $outputFile)) {
         logMessage("Successfully copied PDF file (simple copy method)");
         return true;

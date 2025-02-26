@@ -10,10 +10,7 @@
         }
     ],
     "require": {
-        "php": ">=7.2.0",
-        "tecnickcom/tcpdf": "^6.4",
-        "setasign/fpdi-tcpdf": "^2.3",
-        "setasign/fpdi": "^2.3"
+        "php": ">=7.2.0"
     },
     "autoload": {
         "files": [
